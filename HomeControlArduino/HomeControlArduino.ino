@@ -1,6 +1,11 @@
 #include <SoftwareSerial\SoftwareSerial.h>
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
+#include <Timer.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+Timer timer;
 
 int rx = 2;
 int tx = 3;
@@ -24,8 +29,25 @@ String PASSWORD = "niezgadnieszmnie";
 
 #define HOST_NAME   "api.thingspeak.com"
 #define HOST_PORT   80
-#define ONE_WIRE_BUS 7
+#define ONE_WIRE_BUS 6
+OneWire oneWire(ONE_WIRE_BUS);
+
+DallasTemperature sensors(&oneWire);
 #define TOUCH_SENSOR 7
+
+void updateTemp() {
+	lcd.clear();
+	lcd.setCursor(0, 0);
+	lcd.print("Temperature");
+	sensors.requestTemperatures();
+	float temp = sensors.getTempCByIndex(0);
+	Serial.println(sensors.getTempCByIndex(0));
+	String temp1 = String(temp);
+	softSerial.print(temp1);
+	lcd.print(temp1);
+	lcd.setCursor(0, 1);
+	lcd.print(millis());
+}
 
 void setup() {
 	pinMode(led, OUTPUT);
@@ -36,9 +58,13 @@ void setup() {
 	lcd.setCursor(0, 0);
 	lcd.print("Initialize LCD!");
 	pinMode(TOUCH_SENSOR, INPUT);
+	sensors.begin();
+	timer.every(30*1000, updateTemp);
 }
 
 void loop() {
+
+	timer.update();
 
 	if (digitalRead(TOUCH_SENSOR) == HIGH && touchFlag) {
 		touchFlag = false;
@@ -109,4 +135,23 @@ void loop() {
 	}
 	else {
 	}
+
+	
+}
+
+
+
+void displayIP() {
+	softSerial.print("IP");
+	
+	String ip = "";
+	unsigned long start = millis();
+	while (millis() - start < 2000) {
+		while (softSerial.available() > 0) {
+			ip += softSerial.readString();
+		}
+	}
+
+	lcd.setCursor(0, 1);
+	lcd.print(ip);
 }
