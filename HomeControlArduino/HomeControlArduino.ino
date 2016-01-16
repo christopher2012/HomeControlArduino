@@ -8,8 +8,12 @@
 #include <Commands.h>
 #include <EEPROM\EEPROM.h>
 #include <EEPROMAddressess.h>
-Timer timer;
+#include <GPIO.h>
+#include <DS1307RTC\DS1307RTC.h>
+#include <Time\Time.h>
 
+Timer timer;
+tmElements_t tm;
 String message = "";
 
 
@@ -21,7 +25,24 @@ boolean autoSwitchOn= false;
 boolean smokeAlarm = false;
 boolean monoxideAlarm = false;
 
+boolean customSett;
 
+int alarmSettings=0;
+int autoLightSettings = 0;
+
+int alarmWeekDays;
+int alarmSinceMinute;
+int alarmSinceHour;
+int alarmToMinute;
+int alarmToHour;
+
+int autoLightWeekDays;
+int autoLighSinceMinute;
+int autoLightSinceHour;
+int autoLighToMinute;
+int autoLighToHour;
+
+int hourSinceSettings = B11000000;
 int alarm = 0;
 int alarmAddress = 0;
 //int autoSwitchOffLight = 0;
@@ -29,28 +50,13 @@ int alarmAddress = 0;
 int smokeLevel = 1;
 int monoxideLevel = 1;
 
-boolean touchFlag = true;
+boolean touchFlag = false;
 
 LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);
 
 
-String SSID = "UPC2633536";
-String PASSWORD = "niezgadnieszmnie";
 
-#define HOST_NAME   "api.thingspeak.com"
-#define HOST_PORT   80
 
-#define RX 2
-#define TX 3
-#define SMOKE_IND 4
-#define MONOXIDE_IND 5
-#define ONE_WIRE_BUS 6
-#define TOUCH_SENSOR 7
-#define PIR_SENSOR 8
-#define LIGHT 9
-#define ALARM_OUTPUT 10
-#define ALARM_IND 12
-#define AUTO_LIGHT_IND 11
 OneWire oneWire(ONE_WIRE_BUS);
 SoftwareSerial softSerial(RX, TX);
 DallasTemperature sensors(&oneWire);
@@ -102,6 +108,7 @@ void playAlarm() {
 int isEEPROMData = 0;
 
 void setup() {
+
 	pinMode(SMOKE_IND, OUTPUT);
 	pinMode(MONOXIDE_IND, OUTPUT);
 	pinMode(ALARM_IND, OUTPUT);
@@ -109,8 +116,13 @@ void setup() {
 	pinMode(LIGHT, OUTPUT);
 	pinMode(PIR_SENSOR, INPUT);
 	pinMode(ALARM_OUTPUT, OUTPUT);
+	pinMode(TOUCH_SENSOR, INPUT);
 	softSerial.begin(9600);
 	Serial.begin(9600);
+
+
+	while (!Serial);
+	setTimeFromComputer();
 	isEEPROMData = EEPROM.read(0);
 	if (isEEPROMData == 0) {
 		Serial.println("Saving data");
@@ -131,6 +143,7 @@ void setup() {
 	}
 	Serial.println(isEEPROMData);
 
+
 	delay(10000);
 	Serial.println("Hello from Serial");
 	lcd.begin(16, 2);
@@ -138,13 +151,75 @@ void setup() {
 	lcd.print("Initialize LCD!");
 	displayIP();
 	delay(1500);
-	pinMode(TOUCH_SENSOR, INPUT);
 	sensors.begin();
 	updateTemp();
 	delay(1500);
 	timer.every(15*60000, updateTemp);
 	alarmThread.onRun(playAlarm);
+	
 }
+
+void setTimeFromComputer() {
+	bool parse = false;
+	bool config = false;
+
+	if (getDate(__DATE__) && getTime(__TIME__)) {
+		parse = true;
+		// and configure the RTC with this info
+		if (RTC.write(tm)) {
+			config = true;
+		}
+	}
+
+
+	if (parse && config) {
+		Serial.print("DS1307 configured Time=");
+		Serial.print(__TIME__);
+		Serial.print(", Date=");
+		Serial.println(__DATE__);
+	}
+	else if (parse) {
+		Serial.println("DS1307 Communication Error :-{");
+		Serial.println("Please check your circuitry");
+	}
+	else {
+		Serial.print("Could not parse info from the compiler, Time=\"");
+		Serial.print(__TIME__);
+		Serial.print("\", Date=\"");
+		Serial.print(__DATE__);
+		Serial.println("\"");
+	}
+
+	Serial.print("weekDay: ");
+	Serial.println(tm.Wday);
+}
+
+
+bool getTime(const char *str)
+{
+	int Hour, Min, Sec;
+
+	if (sscanf(str, "%d:%d:%d", &Hour, &Min, &Sec) != 3) return false;
+	tm.Hour = Hour;
+	tm.Minute = Min;
+	tm.Second = Sec;
+	return true;
+}
+
+bool getDate(const char *str)
+{
+	char Month[12];
+	int Day, Year;
+	uint8_t monthIndex;
+
+	if (sscanf(str, "%s %d %d", Month, &Day, &Year) != 3) return false;
+
+	tm.Day = Day;
+	tm.Month = monthIndex + 1;
+	tm.Year = CalendarYrToTm(Year);
+	return true;
+}
+
 
 void reset_alarm() {
 	digitalWrite(ALARM_OUTPUT, LOW);
@@ -155,11 +230,35 @@ void reset_light() {
 	brightness = 0;
 }
 
+boolean isWeekDayChecked() {
+	switch (tm.Wday)
+	{
+	case 0:
+		if (alarmWeekDays & B100000) return true;
+		break;
+	case 1:
+		if (alarmWeekDays & B1000000) return true;
+		break;
+	default:
+		return false;
+	}
+}
+
 void loop() {
 
 	timer.update();
 
 		analogWrite(LIGHT, map(brightness, 0, 100, 0, 255));
+
+		if (analogRead(A0) > 555 && smokeAlarm) {
+			isAlarmRunning = true;
+			alarmThread.run();
+		}
+
+		if (analogRead(A1) > 555 && smokeAlarm) {
+			isAlarmRunning = true;
+			alarmThread.run();
+		}
 
 		digitalWrite(SMOKE_IND, smokeAlarm);
 
@@ -184,16 +283,29 @@ void loop() {
 		touchFlag = true;
 	}
 
+	
 	if (digitalRead(PIR_SENSOR) == HIGH) {
-		if (autoSwitchOn) {
-				brightness = 255;
-				timer.after(15000, reset_light);
-		}
-		if (alarmMovement && (!isAlarmRunning)) {
+
+		if (alarmMovement && !customSett) {
 			isAlarmRunning = true;
 			alarmThread.run();
+			Serial.print("running alarm");
 		}
-		
+		else if (alarmMovement) {
+			if (alarmSinceHour<tm.Hour && alarmSinceMinute < tm.Minute
+				&& alarmToHour> tm.Hour && alarmToHour > tm.Minute) {
+				isAlarmRunning = true;
+				alarmThread.run();
+				Serial.print("running alarm");
+			}
+
+		}
+
+		if (autoSwitchOn) {
+			brightness = 255;
+			timer.after(15000, reset_light);
+		}
+
 	}
 
 	if (softSerial.available() > 4) {
@@ -226,19 +338,20 @@ void loop() {
 					}
 					break;
 				case CMD_CHANGE_BRIGHTNESS:
-					message = "";
-					for (int i = 0; i < 3; i++) {
-						c = softSerial.read();
-						if (!(c == 0 && message.equals("")))
-							message += c;
-					}
+					//message = "";
+					//for (int i = 0; i < 3; i++) {
+					//	c = softSerial.read();
+					//	if (!(c == 0 && message.equals("")))
+					//		message += c;
+					//}
 
-					updateLight(message.toInt());
+					updateLight(softSerial.readString().toInt());
 
 					Serial.print("Jasnosc: ");
 					Serial.println(brightness);
 					break;
 				case CMD_GET_DATA: {
+					
 					softSerial.print("{\"STATUS\":\"OK\", \"BRIGHTNESS\":");
 					softSerial.print(brightness);
 					softSerial.print(", \"TEMP_IN\":");
@@ -261,12 +374,44 @@ void loop() {
 					break;
 				}
 				case CMD_ALARM: {
+					String response;
+					int resp;
 					Serial.println("Switching alarm");
 					char c = softSerial.read();
 					if (c == '1') 
 						alarmMovement = true;
 					else
 						alarmMovement = false;
+
+					Serial.print("Response: ");
+					response = softSerial.readString();
+					alarmSettings =response.toInt();
+					Serial.println(response);
+					if (response.charAt(0) == '1') {
+						customSett = true;
+					}
+					else {
+						customSett = false;
+					}
+					
+					alarmSinceHour = response.substring(4,6).toInt();
+					alarmSinceMinute = response.substring(6, 8).toInt();
+					alarmToHour = response.substring(8, 10).toInt();
+					alarmToMinute = response.substring(10, 12).toInt();
+					alarmWeekDays = response.substring(1, 4).toInt();
+						Serial.println("Data:");
+						Serial.println(alarmSinceHour);
+						Serial.println(alarmSinceMinute);
+						Serial.println(alarmToHour);
+						Serial.println(alarmToMinute);
+						Serial.println(alarmWeekDays);
+
+						if (alarmWeekDays & B1) {
+							Serial.println("monday checked");
+						}
+						if (alarmWeekDays & B10) {
+							Serial.println("tuesday checked");
+						}
 
 					EEPROM.update(ADDR_ALARM, alarmMovement);
 					break;
@@ -314,6 +459,14 @@ void loop() {
 	}
 	else {
 	}
+}
+
+int getHour() {
+
+}
+
+int getTime() {
+
 }
 
 void updateLight(int i) {
