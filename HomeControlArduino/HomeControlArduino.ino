@@ -9,7 +9,6 @@
 #include <EEPROM\EEPROM.h>
 #include <EEPROMAddressess.h>
 #include <GPIO.h>
-#include <DS1307RTC\DS1307RTC.h>
 #include <Time\Time.h>
 
 Timer timer;
@@ -25,37 +24,27 @@ boolean autoSwitchOn= false;
 boolean smokeAlarm = false;
 boolean monoxideAlarm = false;
 
-boolean customSett;
+boolean alarmCustomSettings = false;
+byte alarmWeekDays=0;
+byte alarmSinceMinute = 0;
+byte alarmSinceHour = 0;
+byte alarmToMinute = 0;
+byte alarmToHour = 0;
 
-int alarmSettings=0;
-int autoLightSettings = 0;
 
-int alarmWeekDays;
-int alarmSinceMinute;
-int alarmSinceHour;
-int alarmToMinute;
-int alarmToHour;
+boolean autoLightCustomSettings = false;
+byte autoLightWeekDays = 0;
+byte autoLighSinceMinute = 0;
+byte autoLightSinceHour = 0;
+byte autoLightToMinute = 0;
+byte autoLightToHour = 0;
 
-int autoLightWeekDays;
-int autoLighSinceMinute;
-int autoLightSinceHour;
-int autoLighToMinute;
-int autoLighToHour;
-
-int hourSinceSettings = B11000000;
-int alarm = 0;
-int alarmAddress = 0;
-//int autoSwitchOffLight = 0;
-//int autoSwitchOffLightAddress = 1;
-int smokeLevel = 1;
-int monoxideLevel = 1;
+byte smokeLevel = 1;
+byte monoxideLevel = 1;
 
 boolean touchFlag = false;
 
 LiquidCrystal_I2C lcd(0x27, 2, 1, 0, 4, 5, 6, 7, 3, POSITIVE);
-
-
-
 
 OneWire oneWire(ONE_WIRE_BUS);
 SoftwareSerial softSerial(RX, TX);
@@ -71,11 +60,9 @@ void updateTemp() {
 	float temp = sensors.getTempCByIndex(0);
 	tempInside = temp;
 	Serial.println(tempInside);
-	String temp1 = String(temp);
 	softSerial.print("TTT");
-	softSerial.println(temp1);
-	temp1.remove(temp1.length() - 1);
-	lcd.print(temp1);
+	softSerial.println(temp);
+	lcd.print(temp);
 }
 
 #define NOTE_F2  87
@@ -122,6 +109,7 @@ void setup() {
 
 
 	while (!Serial);
+	
 	setTimeFromComputer();
 	isEEPROMData = EEPROM.read(0);
 	if (isEEPROMData == 0) {
@@ -132,6 +120,18 @@ void setup() {
 		EEPROM.write(ADDR_SMOKE, smokeAlarm);
 		EEPROM.write(ADDR_MONOXIDE, monoxideAlarm);
 		EEPROM.write(ADDR_NOTFIRST, 1);
+		EEPROM.write(ADDR_ALARM + 11, alarmCustomSettings);
+		EEPROM.write(ADDR_ALARM + 12, alarmSinceHour);
+		EEPROM.write(ADDR_ALARM + 13, alarmSinceMinute);
+		EEPROM.write(ADDR_ALARM + 14, alarmToHour);
+		EEPROM.write(ADDR_ALARM + 15, alarmToMinute);
+		EEPROM.write(ADDR_ALARM + 16, alarmWeekDays);
+		EEPROM.write(ADDR_AUTO_ON + 21, alarmCustomSettings);
+		EEPROM.write(ADDR_AUTO_ON + 22, autoLightSinceHour);
+		EEPROM.write(ADDR_AUTO_ON + 23, autoLighSinceMinute);
+		EEPROM.write(ADDR_AUTO_ON + 24, autoLightToHour);
+		EEPROM.write(ADDR_AUTO_ON + 25, autoLightToMinute);
+		EEPROM.write(ADDR_AUTO_ON + 26, autoLightWeekDays);
 	}
 	else if(isEEPROMData==1){
 		Serial.println("Reading data");
@@ -140,6 +140,18 @@ void setup() {
 		autoSwitchOn = EEPROM.read(ADDR_AUTO_ON);
 		smokeAlarm = EEPROM.read(ADDR_SMOKE );
 		monoxideAlarm= EEPROM.read(ADDR_MONOXIDE);
+		alarmCustomSettings = EEPROM.read(ADDR_ALARM + 11);
+		alarmSinceHour = EEPROM.read(ADDR_ALARM + 12);
+		alarmSinceMinute= EEPROM.read(ADDR_ALARM + 13);
+		alarmToHour=EEPROM.read(ADDR_ALARM + 14);
+		alarmToMinute=EEPROM.read(ADDR_ALARM + 15);
+		alarmWeekDays=EEPROM.read(ADDR_ALARM + 16);
+		alarmCustomSettings=EEPROM.read(ADDR_AUTO_ON + 21);
+		autoLightSinceHour=EEPROM.read(ADDR_AUTO_ON + 22);
+		autoLighSinceMinute=EEPROM.read(ADDR_AUTO_ON + 23);
+		autoLightToHour=EEPROM.read(ADDR_AUTO_ON + 24);
+		autoLightToMinute=EEPROM.read(ADDR_AUTO_ON + 25);
+		autoLightWeekDays=EEPROM.read(ADDR_AUTO_ON + 26);
 	}
 	Serial.println(isEEPROMData);
 
@@ -165,14 +177,10 @@ void setTimeFromComputer() {
 
 	if (getDate(__DATE__) && getTime(__TIME__)) {
 		parse = true;
-		// and configure the RTC with this info
-		if (RTC.write(tm)) {
-			config = true;
-		}
 	}
 
 
-	if (parse && config) {
+	if (parse) {
 		Serial.print("DS1307 configured Time=");
 		Serial.print(__TIME__);
 		Serial.print(", Date=");
@@ -286,7 +294,7 @@ void loop() {
 	
 	if (digitalRead(PIR_SENSOR) == HIGH) {
 
-		if (alarmMovement && !customSett) {
+		if (alarmMovement && !alarmCustomSettings) {
 			isAlarmRunning = true;
 			alarmThread.run();
 			Serial.print("running alarm");
@@ -298,7 +306,6 @@ void loop() {
 				alarmThread.run();
 				Serial.print("running alarm");
 			}
-
 		}
 
 		if (autoSwitchOn) {
@@ -310,6 +317,7 @@ void loop() {
 
 	if (softSerial.available() > 4) {
 		message = "";
+		Serial.print("getting...");
 		char c;
 		for (int i = 0; i < 3; i++) {
 			c = softSerial.read();
@@ -338,12 +346,6 @@ void loop() {
 					}
 					break;
 				case CMD_CHANGE_BRIGHTNESS:
-					//message = "";
-					//for (int i = 0; i < 3; i++) {
-					//	c = softSerial.read();
-					//	if (!(c == 0 && message.equals("")))
-					//		message += c;
-					//}
 
 					updateLight(softSerial.readString().toInt());
 
@@ -360,8 +362,32 @@ void loop() {
 					softSerial.print(tempOutside);
 					softSerial.print(", \"ALARM\":");
 					softSerial.print(alarmMovement);
+					softSerial.print(", \"ALARM1\":");
+					softSerial.print(alarmCustomSettings);
+					softSerial.print(", \"ALARM2\":");
+					softSerial.print(alarmSinceHour);
+					softSerial.print(", \"ALARM3\":");
+					softSerial.print(alarmSinceMinute);
+					softSerial.print(", \"ALARM4\":");
+					softSerial.print(alarmToHour);
+					softSerial.print(", \"ALARM5\":");
+					softSerial.print(alarmToMinute);
+					softSerial.print(", \"ALARM6\":");
+					softSerial.print(alarmWeekDays);
 					softSerial.print(", \"AUTO_ON\":");
 					softSerial.print(autoSwitchOn);
+					softSerial.print(", \"AUTO_ON1\":");
+					softSerial.print(autoLightCustomSettings);
+					softSerial.print(", \"AUTO_ON2\":");
+					softSerial.print(autoLightSinceHour);
+					softSerial.print(", \"AUTO_ON3\":");
+					softSerial.print(autoLighSinceMinute);
+					softSerial.print(", \"AUTO_ON4\":");
+					softSerial.print(autoLightToHour);
+					softSerial.print(", \"AUTO_ON5\":");
+					softSerial.print(autoLightToMinute);
+					softSerial.print(", \"AUTO_ON6\":");
+					softSerial.print(autoLightWeekDays);
 					softSerial.print(", \"SMOKE\":");
 					softSerial.print(smokeLevel);
 					softSerial.print(", \"MONOXIDE\":");
@@ -375,7 +401,6 @@ void loop() {
 				}
 				case CMD_ALARM: {
 					String response;
-					int resp;
 					Serial.println("Switching alarm");
 					char c = softSerial.read();
 					if (c == '1') 
@@ -385,13 +410,12 @@ void loop() {
 
 					Serial.print("Response: ");
 					response = softSerial.readString();
-					alarmSettings =response.toInt();
 					Serial.println(response);
 					if (response.charAt(0) == '1') {
-						customSett = true;
+						alarmCustomSettings = true;
 					}
 					else {
-						customSett = false;
+						alarmCustomSettings = false;
 					}
 					
 					alarmSinceHour = response.substring(4,6).toInt();
@@ -406,14 +430,13 @@ void loop() {
 						Serial.println(alarmToMinute);
 						Serial.println(alarmWeekDays);
 
-						if (alarmWeekDays & B1) {
-							Serial.println("monday checked");
-						}
-						if (alarmWeekDays & B10) {
-							Serial.println("tuesday checked");
-						}
-
-					EEPROM.update(ADDR_ALARM, alarmMovement);
+						EEPROM.update(ADDR_ALARM, alarmMovement);
+						EEPROM.update(ADDR_ALARM+11, alarmCustomSettings);
+						EEPROM.update(ADDR_ALARM+12, alarmSinceHour);
+						EEPROM.update(ADDR_ALARM+13, alarmSinceMinute);
+						EEPROM.update(ADDR_ALARM+14, alarmToHour);
+						EEPROM.update(ADDR_ALARM+15, alarmToMinute);
+						EEPROM.update(ADDR_ALARM+16, alarmWeekDays);
 					break;
 				}
 				case CMD_AUTO_LIGHT_ON: {
@@ -423,7 +446,36 @@ void loop() {
 						autoSwitchOn = true;
 					else
 						autoSwitchOn = false;
+
+					Serial.print("Response: ");
+					String response = softSerial.readString();
+					Serial.println(response);
+					if (response.charAt(0) == '1') {
+						autoLightCustomSettings = true;
+					}
+					else {
+						autoLightCustomSettings = false;
+					}
+
+					autoLightSinceHour = response.substring(4, 6).toInt();
+					autoLighSinceMinute = response.substring(6, 8).toInt();
+					autoLightToHour = response.substring(8, 10).toInt();
+					autoLightToMinute = response.substring(10, 12).toInt();
+					autoLightWeekDays = response.substring(1, 4).toInt();
+					Serial.println("Data:");
+					Serial.println(alarmSinceHour);
+					Serial.println(alarmSinceMinute);
+					Serial.println(alarmToHour);
+					Serial.println(alarmToMinute);
+					Serial.println(alarmWeekDays);
+
 					EEPROM.write(ADDR_AUTO_ON, autoSwitchOn);
+					EEPROM.write(ADDR_AUTO_ON + 21, autoSwitchOn);
+					EEPROM.write(ADDR_AUTO_ON + 22, autoLightSinceHour);
+					EEPROM.write(ADDR_AUTO_ON + 23, autoLighSinceMinute);
+					EEPROM.write(ADDR_AUTO_ON+24, autoLightToHour);
+					EEPROM.write(ADDR_AUTO_ON+25, autoLightToMinute);
+					EEPROM.write(ADDR_AUTO_ON+26, autoLightWeekDays);
 					break;
 				}
 				case CMD_SMOKE_ALARM: {
@@ -489,18 +541,18 @@ void displayIP() {
 	}
 	softSerial.println("III");
 	
-
-	String ip = "";
+	message = "";
 	unsigned long start = millis();
 
 	while (millis() - start < 3000) {
 		if (softSerial.available()>5) {
-			ip = softSerial.readString();
+			message = softSerial.readString();
 			break;
 		}
 	}
-	ip.remove(ip.length()-2);
-	Serial.println(ip);
+	message.remove(message.length()-2);
+	Serial.println(message);
 	lcd.setCursor(0, 1);
-	lcd.print(ip);
+	lcd.print(message);
+	message = "";
 }
