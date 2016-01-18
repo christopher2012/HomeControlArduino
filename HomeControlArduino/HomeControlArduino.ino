@@ -55,14 +55,21 @@ boolean isAlarmRunning = false;
 
 void updateTemp() {
 	lcd.setCursor(0, 0);
-	lcd.print("Temperature ");
+	lcd.print("WEW ");
 	sensors.requestTemperatures();
-	float temp = sensors.getTempCByIndex(0);
-	tempInside = temp;
-	Serial.println(tempInside);
+
+	tempInside = sensors.getTempCByIndex(0);
+	tempOutside = sensors.getTempCByIndex(1);
+	//Serial.println(tempInside);
+	//Serial.println(tempOutside);
 	softSerial.print("TTT");
-	softSerial.println(temp);
-	lcd.print(temp);
+	softSerial.print(tempInside);
+	softSerial.print(";");
+	softSerial.println(tempOutside);
+	lcd.print(tempInside);
+	lcd.moveCursorLeft();
+	lcd.print(" ZEW ");
+	lcd.print((int)tempOutside);
 }
 
 #define NOTE_F2  87
@@ -77,7 +84,7 @@ int noteDurations[] = {
 };
 
 void playAlarm() {
-	Serial.println("Hello from alarm player!");
+	//Serial.println("Hello from alarm player!");
 	long startedTime = millis();
 	while (startedTime + alarmDuration > millis()) {
 		for (int thisNote = 0; thisNote < 8; thisNote++) {
@@ -181,25 +188,25 @@ void setTimeFromComputer() {
 
 
 	if (parse) {
-		Serial.print("DS1307 configured Time=");
-		Serial.print(__TIME__);
-		Serial.print(", Date=");
-		Serial.println(__DATE__);
+		//Serial.print("DS1307 configured Time=");
+		//Serial.print(__TIME__);
+		//Serial.print(", Date=");
+		//Serial.println(__DATE__);
 	}
 	else if (parse) {
-		Serial.println("DS1307 Communication Error :-{");
-		Serial.println("Please check your circuitry");
+		//Serial.println("DS1307 Communication Error :-{");
+		//Serial.println("Please check your circuitry");
 	}
 	else {
-		Serial.print("Could not parse info from the compiler, Time=\"");
-		Serial.print(__TIME__);
-		Serial.print("\", Date=\"");
-		Serial.print(__DATE__);
-		Serial.println("\"");
+		//Serial.print("Could not parse info from the compiler, Time=\"");
+		//Serial.print(__TIME__);
+		//Serial.print("\", Date=\"");
+		//Serial.print(__DATE__);
+		//Serial.println("\"");
 	}
 
-	Serial.print("weekDay: ");
-	Serial.println(tm.Wday);
+	//Serial.print("weekDay: ");
+	//Serial.println(tm.Wday);
 }
 
 
@@ -228,7 +235,6 @@ bool getDate(const char *str)
 	return true;
 }
 
-
 void reset_alarm() {
 	digitalWrite(ALARM_OUTPUT, LOW);
 }
@@ -238,34 +244,36 @@ void reset_light() {
 	brightness = 0;
 }
 
-boolean isWeekDayChecked() {
-	switch (tm.Wday)
-	{
-	case 0:
-		if (alarmWeekDays & B100000) return true;
-		break;
-	case 1:
-		if (alarmWeekDays & B1000000) return true;
-		break;
-	default:
-		return false;
-	}
-}
-
 void loop() {
-
+	
 	timer.update();
 
 		analogWrite(LIGHT, map(brightness, 0, 100, 0, 255));
 
-		if (analogRead(A0) > 555 && smokeAlarm) {
+		if (analogRead(A0) < 333) {
+			smokeLevel = 1;
+		}
+		else if (analogRead(A0) < 666) {
+			smokeLevel = 2;
+		}
+		else if(smokeAlarm)
+		{
 			isAlarmRunning = true;
 			alarmThread.run();
+			smokeLevel = 3;
 		}
 
-		if (analogRead(A1) > 555 && smokeAlarm) {
+		if (analogRead(A1) < 333) {
+			monoxideLevel = 1;
+		}
+		else if (analogRead(A1) < 666) {
+			monoxideLevel = 2;
+		}
+		else if(monoxideAlarm)
+		{
 			isAlarmRunning = true;
 			alarmThread.run();
+			monoxideLevel = 3;
 		}
 
 		digitalWrite(SMOKE_IND, smokeAlarm);
@@ -317,7 +325,7 @@ void loop() {
 
 	if (softSerial.available() > 4) {
 		message = "";
-		Serial.print("getting...");
+		//Serial.print("getting...");
 		char c;
 		for (int i = 0; i < 3; i++) {
 			c = softSerial.read();
@@ -325,8 +333,8 @@ void loop() {
 		}
 
 		if (message.equals("MSG")) {
-			Serial.print("Wiadomosc...");
-			Serial.println(message);
+			//Serial.print("Wiadomosc...");
+			//Serial.println(message);
 
 			c = softSerial.read();
 			if (c == '=') {
@@ -467,7 +475,9 @@ void loop() {
 					Serial.println(alarmSinceMinute);
 					Serial.println(alarmToHour);
 					Serial.println(alarmToMinute);
+					Serial.println("weekDays:");
 					Serial.println(alarmWeekDays);
+					//Serial.println(response.substring(1, 4).toInt());
 
 					EEPROM.write(ADDR_AUTO_ON, autoSwitchOn);
 					EEPROM.write(ADDR_AUTO_ON + 21, autoSwitchOn);
@@ -511,16 +521,17 @@ void loop() {
 	}
 	else {
 	}
+	
 }
+/*
+int validateByte(String value) {
 
-int getHour() {
-
+	for (int i = 0; i < value.length(); i++) {
+		if (value.charAt(i) != '0')
+			return value.substring(i).toInt();
+	}
 }
-
-int getTime() {
-
-}
-
+*/
 void updateLight(int i) {
 	if (i == 1) {
 		brightness = i;
